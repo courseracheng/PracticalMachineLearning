@@ -1,0 +1,138 @@
+---
+title: "Practical Machine Learning Project"
+date: "December 20, 2014"
+output: html_document
+---
+
+### Introduction
+
+Many sport devices can collect a lot of data about personal activity. Here we have the data from http://groupware.les.inf.puc-rio.br/har which are accelerometers readings on the belt, forearm, arm, and dumbell of 6 participants when they were asked to  perform barbell lifts correctly and incorrectly in 5 different ways. So we have the data format as the personal information, then accelerometers readings and the labeled 5 class motions. 
+
+The training data for this project are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+
+Our goal is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. 
+
+Here I will build random forest models for the prediction. The reason to choose random forest is becasue RF is the top accruacy model in prediction if we mainly focus on the accuracy not on the interpretation. Models are build as follows:
+
+### Read and clean data
+
+```{r}
+library(caret)
+
+# read in raw data and change "#DIV/0!" to be NA
+rawtrndata   = read.csv("pml-training.csv", na.strings = c("#DIV/0!"))
+rawtstdata   = read.csv("pml-testing.csv", na.strings = c("#DIV/0!"))
+
+dim(rawtrndata)
+```
+As we can see that there are 19622 observation and 160 columns in the training data. The first 7 columns are not related and not selected for future use. Then remove variables which have 'NA' inside. Finally, remove variables have near zero covariates.
+
+```{r}
+# remove the first 7 columns for both
+trndata = rawtrndata[,8:ncol(rawtrndata)]
+tstdata = rawtstdata[,8:ncol(rawtstdata)]
+
+# remove variables which have 'NA'
+trndata = trndata[,colSums(is.na(trndata)) == 0]
+
+# remove near zeros covariate
+nzc = nearZeroVar(trndata, saveMetrics = TRUE)
+trndata = trndata[, nzc$nzv == FALSE]
+
+# convert classe variable to be factor
+trndata$classe = factor(trndata$classe)
+
+# the variable left
+dim(trndata)
+```
+
+As we can see there are only 52 variables left and one for classe.
+
+### Fit Random Forest Model
+
+Split training data into training part (75 %) and out of sample testing part (25 %). Then fit random forest model by 10 fold-CV with four cores (this code is for Mac machine in 4 cores)
+
+```{r}
+set.seed(1)
+trnIndex = createDataPartition(y = trndata$classe, p=0.75, list=FALSE)
+
+trnPart = trndata[trnIndex,]
+tstPart = trndata[-trnIndex,]
+
+library(doMC)
+registerDoMC(cores = 4)
+
+fitControl = trainControl(method="cv", number=10, allowParallel = TRUE)
+set.seed(1)
+modelrf = train(classe ~., method="rf", data=trnPart, trControl=fitControl, prox=FALSE)
+
+modelrf
+```
+
+
+As we can see, mtry is `r modelrf$finalModel$mtry` can give the best performance (accuracy = `r sprintf("%.4f",subset(modelrf$results, mtry==modelrf$finalModel$mtry)$Accuracy)`) in training set with 10 fold cross-validation.
+
+### Training set accurancy
+
+```{r}
+predfit = predict(modelrf, trnPart)
+confpredfit = confusionMatrix(predfit, trnPart$classe)
+print(confpredfit)
+```
+
+Here we can see that the training set accuracy is `r sprintf("%.4f",getElement(confpredfit$overall, "Accuracy"))` for all classes, which is a litter better than the accuracy reported by 10 fold CV (`r sprintf("%.4f",subset(modelrf$results, mtry==modelrf$finalModel$mtry)$Accuracy)`). Then we can also check the out of smaple test set accurancy.
+
+### Out of sample test set accurancy
+
+The out of sample test 
+
+```{r}
+predoos = predict(modelrf, tstPart)
+confpredoos = confusionMatrix(predoos, tstPart$classe)
+print(confpredoos)
+```
+
+Based on the output, we can see that the accuracy is `r sprintf("%.4f",getElement(confpredoos$overall, "Accuracy"))`, which is almost the same as 10 folder CV but a little worse than the training set accuracy. This is because each tree in random forest is overfitted, and final forest is overfited to the training data. So we can get a little better accuracy in training data. As we can see that training set accurancy (`r sprintf("%.4f",getElement(confpredfit$overall, "Accuracy"))`) is better than CV (`r sprintf("%.4f",subset(modelrf$results, mtry==modelrf$finalModel$mtry)$Accuracy)`) and out of sample test set (`r sprintf("%.4f",getElement(confpredoos$overall, "Accuracy"))` ). The 10 CV accuracy should be reported as the accuracy for the random forest model and it is also close to out of sample test set.
+
+Table of Accurancy
+
+|   | Accuracy  |
+|  ---  | ---  |
+| 10 fold CV   |  `r sprintf("%.4f",subset(modelrf$results, mtry==modelrf$finalModel$mtry)$Accuracy)`  |
+| Training set part   | `r sprintf("%.4f",getElement(confpredfit$overall, "Accuracy"))`  |
+| Out of sample part   |  `r sprintf("%.4f",getElement(confpredoos$overall, "Accuracy"))` |
+
+
+### Test set (20 observations)
+
+There is also have a 20 observations test set and the results are show as follow.
+
+```{r}
+predtest = predict(modelrf, tstdata)
+print(predtest)
+```
+
+
+### Conclusion
+
+From the original training set, good variables are kept by removing variables with missing values and variables with near zero variance. Then the data set is split into training set (75 %, real training) and test set (25 %, out of sample test set). Random forest model are build with 10 fold CV and mtry = `r modelrf$finalModel$mtry` can give the best performance with accuracy `r sprintf("%.4f",subset(modelrf$results, mtry==modelrf$finalModel$mtry)$Accuracy)` . The trainig set accuracy is `r sprintf("%.4f",getElement(confpredfit$overall, "Accuracy"))`  and out of sample test set accuracy is `r sprintf("%.4f",getElement(confpredoos$overall, "Accuracy"))`. Generally, the out of sample accuracy should be close to the CV accuracy and both should be lower than original training set accuracy.  The difference of training set accuracy and 10 fold CV is due to the overfitting of the training set since each tree in random forest is overfitted. 
+
+
+
+
+
+
+
+---
+
+#### The end of the report
+
+---
+
